@@ -8,7 +8,7 @@ from datetime import datetime
 # Configuration
 API_ID = int(os.getenv('API_ID', '25923419'))
 API_HASH = os.getenv('API_HASH', 'fb5eb957660ee81004017afa6629f1ab')
-PHONE = os.getenv('PHONE', '+918080202210')  # Your phone number
+BOT_TOKEN = os.getenv('7990282768:AAGKek9lizWmXB8U57CucrjTxo1twG5YI9M')
 SOURCE_CHANNEL = os.getenv('SOURCE_CHANNEL', '@TheCineVerseX')
 UPDATE_INTERVAL = 3600  # Update every hour (in seconds)
 
@@ -66,12 +66,17 @@ async def main():
     print("🤖 Starting Auto-Indexer...")
     print(f"Update interval: {UPDATE_INTERVAL} seconds")
     
-    # Create client
-    client = TelegramClient('indexer_session', API_ID, API_HASH)
+    if not BOT_TOKEN:
+        print("❌ ERROR: BOT_TOKEN environment variable not set!")
+        print("Get your bot token from @BotFather on Telegram")
+        return
     
-    # Start client (first time will ask for phone code)
-    await client.start(phone=PHONE)
-    print("✅ Connected to Telegram")
+    # Create client with bot token (NO PHONE NEEDED!)
+    client = TelegramClient('bot_session', API_ID, API_HASH)
+    
+    # Start with bot token - no interactive login required!
+    await client.start(bot_token=BOT_TOKEN)
+    print("✅ Connected to Telegram as bot")
     
     while True:
         try:
@@ -83,7 +88,7 @@ async def main():
             break
         except Exception as e:
             print(f"❌ Error: {e}")
-            await asyncio.sleep(60)  # Wait 1 minute on error
+            await asyncio.sleep(30)  # Wait 30 seconds on error
     
     await client.disconnect()
 
