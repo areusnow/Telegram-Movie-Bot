@@ -1,4 +1,4 @@
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 from telethon import TelegramClient
 from telethon.tl.types import DocumentAttributeFilename
 import json
@@ -6,7 +6,7 @@ import asyncio
 import os
 from datetime import datetime
 
-load_dotenv()
+#load_dotenv()
 
 # Configuration
 API_ID = int(os.getenv('API_ID', '25923419'))
