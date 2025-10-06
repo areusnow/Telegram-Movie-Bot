@@ -5,7 +5,7 @@ import asyncio
 import os
 from datetime import datetime
 
-# Configuration
+# Configuration Settings
 API_ID = int(os.getenv('API_ID', '25923419'))
 API_HASH = os.getenv('API_HASH', 'fb5eb957660ee81004017afa6629f1ab')
 BOT_TOKEN = os.getenv('7990282768:AAGKek9lizWmXB8U57CucrjTxo1twG5YI9M')
