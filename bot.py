@@ -1,12 +1,17 @@
-#from dotenv import load_dotenv
 from telethon import TelegramClient
 from telethon.tl.types import DocumentAttributeFilename
 import json
 import asyncio
 import os
 from datetime import datetime
+from aiohttp import web
 
-#load_dotenv()
+# Try to load .env file if it exists (for local testing only)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # dotenv not installed, that's fine on Render
 
 # Configuration
 API_ID = int(os.getenv('API_ID', '25923419'))
@@ -102,6 +107,20 @@ async def main():
     await client.start(bot_token=BOT_TOKEN)
     print("✅ Connected to Telegram as bot")
     
+    # Start web server for Render health check
+    async def health_check(request):
+        return web.Response(text="Bot is running!")
+    
+    app = web.Application()
+    app.router.add_get('/', health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    port = int(os.getenv('PORT', 10000))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"✅ Web server started on port {port}")
+    
     while True:
         try:
             await index_channel(client)
@@ -115,6 +134,7 @@ async def main():
             await asyncio.sleep(60)  # Wait 1 minute on error
     
     await client.disconnect()
+    await runner.cleanup()
 
 if __name__ == '__main__':
     asyncio.run(main())
