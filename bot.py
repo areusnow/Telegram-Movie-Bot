@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 from telethon import TelegramClient
 from telethon.tl.types import DocumentAttributeFilename
 import json
@@ -5,12 +6,34 @@ import asyncio
 import os
 from datetime import datetime
 
-# Configuration Settings
+load_dotenv()
+
+# Configuration
 API_ID = int(os.getenv('API_ID', '25923419'))
 API_HASH = os.getenv('API_HASH', 'fb5eb957660ee81004017afa6629f1ab')
-BOT_TOKEN = os.getenv('7990282768:AAGKek9lizWmXB8U57CucrjTxo1twG5YI9M')
+
+# Debug: Print all environment variables
+print("=" * 50)
+print("DEBUG: Environment Variables")
+print("=" * 50)
+for key in sorted(os.environ.keys()):
+    if 'TOKEN' in key or 'API' in key:
+        value = os.environ[key]
+        # Mask token for security
+        masked = value[:10] + "..." if len(value) > 10 else value
+        print(f"{key} = {masked}")
+print("=" * 50)
+
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+if not BOT_TOKEN:
+    # Try alternative names in case of typo
+    BOT_TOKEN = os.getenv('bot_token') or os.getenv('BOTTOKEN') or os.getenv('TOKEN')
+    
+print(f"BOT_TOKEN loaded: {BOT_TOKEN is not None}")
+print(f"BOT_TOKEN length: {len(BOT_TOKEN) if BOT_TOKEN else 0}")
+
 SOURCE_CHANNEL = os.getenv('SOURCE_CHANNEL', '@TheCineVerseX')
-UPDATE_INTERVAL = 3600  # Update every hour (in seconds)
+UPDATE_INTERVAL = int(os.getenv('UPDATE_INTERVAL', '3600'))  # Update every hour
 
 # GitHub auto-commit (optional)
 ENABLE_AUTO_COMMIT = os.getenv('ENABLE_AUTO_COMMIT', 'false').lower() == 'true'
@@ -66,6 +89,7 @@ async def main():
     print("🤖 Starting Auto-Indexer...")
     print(f"Update interval: {UPDATE_INTERVAL} seconds")
     
+    # Validate BOT_TOKEN
     if not BOT_TOKEN:
         print("❌ ERROR: BOT_TOKEN environment variable not set!")
         print("Get your bot token from @BotFather on Telegram")
@@ -88,7 +112,7 @@ async def main():
             break
         except Exception as e:
             print(f"❌ Error: {e}")
-            await asyncio.sleep(30)  # Wait 30 seconds on error
+            await asyncio.sleep(60)  # Wait 1 minute on error
     
     await client.disconnect()
 
