@@ -30,8 +30,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Configuration
-BOT_TOKEN = 'YOUR_BOT_TOKEN_HERE'
-CHANNEL_USERNAME = '@your_channel_username'  # Must use username format
+BOT_TOKEN = '7990282768:AAGKek9lizWmXB8U57CucrjTxo1twG5YI9M'
+CHANNEL_USERNAME = '@TheCineVerseX'  # Must use username format
 CACHE_FILE = 'file_cache.json'
 
 # Cache for storing channel files
@@ -263,20 +263,37 @@ def main():
     """Start the bot"""
     # Load cache on startup
     load_cache()
-    
+
     # Create application
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Register handlers
+
+    # Register command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("list", list_files))
-    
+
     # Channel post handler for auto-indexing
     application.add_handler(MessageHandler(
         filters.ChatType.CHANNEL & (filters.Document.ALL | filters.VIDEO | filters.AUDIO),
         channel_post_handler
     ))
-    
-    # Search handler
-    application.add_
+
+    # Search handler (for movie queries)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        search_files
+    ))
+
+    # Button callback handler
+    application.add_handler(CallbackQueryHandler(button_callback))
+
+    # Error handler
+    application.add_error_handler(error_handler)
+
+    # ✅ Start the bot and keep it running
+    logger.info("Bot is now running...")
+    application.run_polling()
+
+# Run main() when the script starts
+if __name__ == "__main__":
+    main()
