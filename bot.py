@@ -1,3 +1,21 @@
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running fine!")
+
+def run_server():
+    port = 10000  # You can also use 8080 or 8000 if Render suggests that
+    server = HTTPServer(("", port), Handler)
+    print(f"✅ Dummy web server running on port {port}")
+    server.serve_forever()
+
+# Start the dummy web server in a background thread
+threading.Thread(target=run_server, daemon=True).start()
+
 import logging
 import json
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
