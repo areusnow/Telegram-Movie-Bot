@@ -128,7 +128,7 @@ async def main():
     print(f"BOT_TOKEN: {'✅ Set' if BOT_TOKEN else '❌ Not set'}")
     
     # Create client with bot token (NO PHONE NEEDED!)
-    client = TelegramClient('bot_session', API_ID, API_HASH)
+    client = TelegramClient('indexer_session', API_ID, API_HASH)
     
     try:
         # Start with bot token - no interactive login required!
