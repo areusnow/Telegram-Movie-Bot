@@ -99,7 +99,7 @@ async def main():
     print(f"Target channel: {SOURCE_CHANNEL}")
     
     # Create client with bot token (NO PHONE NEEDED!)
-    client = TelegramClient('bot_session', API_ID, API_HASH)
+    client = TelegramClient('indexer_session', API_ID, API_HASH)
     
     try:
         # Start with session file (already authenticated)
