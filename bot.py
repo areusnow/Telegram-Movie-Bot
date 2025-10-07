@@ -98,14 +98,6 @@ async def main():
     print(f"Update interval: {UPDATE_INTERVAL} seconds")
     print(f"Target channel: {SOURCE_CHANNEL}")
     
-    # Validate BOT_TOKEN
-    if not BOT_TOKEN:
-        print("❌ ERROR: BOT_TOKEN environment variable not set!")
-        print("Get your bot token from @BotFather on Telegram")
-        return
-    
-    print(f"BOT_TOKEN: {'✅ Set' if BOT_TOKEN else '❌ Not set'}")
-    
     # Create client with bot token (NO PHONE NEEDED!)
     client = TelegramClient('bot_session', API_ID, API_HASH)
     
