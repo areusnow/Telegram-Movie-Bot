@@ -260,39 +260,42 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error(f"Update {update} caused error {context.error}")
 
 def main():
-    """Start the bot"""
+    """Start the bot (webhook mode)"""
     # Load cache on startup
     load_cache()
 
-    # Create application
+    # Create the bot application
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Register command handlers
+    # Register handlers (same as before)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("list", list_files))
-
-    # Channel post handler for auto-indexing
     application.add_handler(MessageHandler(
         filters.ChatType.CHANNEL & (filters.Document.ALL | filters.VIDEO | filters.AUDIO),
         channel_post_handler
     ))
-
-    # Search handler (for movie queries)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND,
         search_files
     ))
-
-    # Button callback handler
     application.add_handler(CallbackQueryHandler(button_callback))
-
-    # Error handler
     application.add_error_handler(error_handler)
 
-    # ✅ Start the bot and keep it running
-    logger.info("Bot is now running...")
-    application.run_polling()
+    # ✅ Webhook configuration
+    PORT = 10000  # Render usually recommends 10000
+    APP_URL = "https://your-render-app-name.onrender.com"  # replace this with your Render domain
+
+    logger.info("🚀 Starting bot in WEBHOOK mode...")
+    logger.info(f"Webhook URL: {APP_URL}/{BOT_TOKEN}")
+
+    # Run webhook instead of polling
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,
+        webhook_url=f"{APP_URL}/{BOT_TOKEN}",
+    )
 
 # Run main() when the script starts
 if __name__ == "__main__":
