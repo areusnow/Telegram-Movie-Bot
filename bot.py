@@ -4,7 +4,6 @@ import json
 import asyncio
 import os
 from datetime import datetime
-from aiohttp import web
 
 # Try to load .env file if it exists (for local testing only)
 try:
@@ -93,6 +92,7 @@ async def main():
     """Main loop - continuously update"""
     print("🤖 Starting Auto-Indexer...")
     print(f"Update interval: {UPDATE_INTERVAL} seconds")
+    print(f"Target channel: {SOURCE_CHANNEL}")
     
     # Validate BOT_TOKEN
     if not BOT_TOKEN:
@@ -100,41 +100,60 @@ async def main():
         print("Get your bot token from @BotFather on Telegram")
         return
     
+    print(f"BOT_TOKEN: {'✅ Set' if BOT_TOKEN else '❌ Not set'}")
+    
     # Create client with bot token (NO PHONE NEEDED!)
     client = TelegramClient('bot_session', API_ID, API_HASH)
     
-    # Start with bot token - no interactive login required!
-    await client.start(bot_token=BOT_TOKEN)
-    print("✅ Connected to Telegram as bot")
-    
-    # Start web server for Render health check
-    async def health_check(request):
-        return web.Response(text="Bot is running!")
-    
-    app = web.Application()
-    app.router.add_get('/', health_check)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    
-    port = int(os.getenv('PORT', 10000))
-    site = web.TCPSite(runner, '0.0.0.0', port)
-    await site.start()
-    print(f"✅ Web server started on port {port}")
-    
-    while True:
+    try:
+        # Start with bot token - no interactive login required!
+        print("🔄 Connecting to Telegram...")
+        await client.start(bot_token=BOT_TOKEN)
+        print("✅ Connected to Telegram as bot")
+        
+        # Get bot info
+        me = await client.get_me()
+        print(f"📱 Bot username: @{me.username}")
+        print(f"📱 Bot ID: {me.id}")
+        
+        # Try to access the channel first
+        print(f"\n🔍 Attempting to access channel: {SOURCE_CHANNEL}")
         try:
-            await index_channel(client)
-            print(f"⏰ Next update in {UPDATE_INTERVAL/60} minutes\n")
-            await asyncio.sleep(UPDATE_INTERVAL)
-        except KeyboardInterrupt:
-            print("\n👋 Stopping indexer...")
-            break
+            entity = await client.get_entity(SOURCE_CHANNEL)
+            print(f"✅ Channel found: {entity.title}")
+            print(f"   Channel ID: {entity.id}")
         except Exception as e:
-            print(f"❌ Error: {e}")
-            await asyncio.sleep(60)  # Wait 1 minute on error
+            print(f"❌ Cannot access channel: {e}")
+            print("   Make sure the bot is added as an admin to the channel!")
+            return
+        
+        print("\n" + "="*50)
+        print("Starting indexing loop...")
+        print("="*50 + "\n")
+        
+        while True:
+            try:
+                print(f"\n⏱️  [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting index...")
+                count = await index_channel(client)
+                print(f"✅ Indexing complete: {count} files")
+                print(f"⏰ Next update in {UPDATE_INTERVAL/60} minutes\n")
+                await asyncio.sleep(UPDATE_INTERVAL)
+            except KeyboardInterrupt:
+                print("\n👋 Stopping indexer...")
+                break
+            except Exception as e:
+                print(f"❌ Error in main loop: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(60)  # Wait 1 minute on error
     
-    await client.disconnect()
-    await runner.cleanup()
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        await client.disconnect()
+        print("👋 Disconnected from Telegram")
 
 if __name__ == '__main__':
     asyncio.run(main())
