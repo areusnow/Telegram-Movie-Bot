@@ -4,6 +4,7 @@ import json
 import asyncio
 import os
 from datetime import datetime
+from aiohttp import web
 
 # Try to load .env file if it exists (for local testing only)
 try:
@@ -44,13 +45,19 @@ ENABLE_AUTO_COMMIT = os.getenv('ENABLE_AUTO_COMMIT', 'false').lower() == 'true'
 
 async def index_channel(client):
     """Index all files from the channel"""
-    print(f"[{datetime.now()}] Indexing channel: {SOURCE_CHANNEL}")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📥 Indexing channel: {SOURCE_CHANNEL}")
     
     movie_data = {}
     count = 0
     
     try:
+        print("   🔄 Fetching messages...")
+        message_count = 0
         async for message in client.iter_messages(SOURCE_CHANNEL, limit=None):
+            message_count += 1
+            if message_count % 100 == 0:
+                print(f"   📊 Processed {message_count} messages, found {count} files so far...")
+            
             if message.document:
                 filename = None
                 
@@ -69,23 +76,41 @@ async def index_channel(client):
                         'date': message.date.isoformat() if message.date else None
                     }
         
+        print(f"   ✅ Total messages processed: {message_count}")
+        print(f"   ✅ Files with documents: {count}")
+        
         # Save to JSON
+        print("   💾 Saving to movies.json...")
         with open('movies.json', 'w', encoding='utf-8') as f:
             json.dump(movie_data, f, ensure_ascii=False, indent=2)
         
-        print(f"✅ Indexed {count} files")
+        print(f"   ✅ Saved {count} files to movies.json")
+        
+        # Show sample
+        if count > 0:
+            print(f"   📋 Sample files:")
+            for i, (filename, _) in enumerate(list(movie_data.items())[:3]):
+                print(f"      {i+1}. {filename}")
         
         # Auto-commit to GitHub (if enabled)
         if ENABLE_AUTO_COMMIT:
+            print("   📤 Pushing to GitHub...")
+            os.system('git config user.name "Auto Indexer Bot"')
+            os.system('git config user.email "bot@render.com"')
             os.system('git add movies.json')
             os.system(f'git commit -m "Auto-update: {count} movies - {datetime.now()}"')
-            os.system('git push')
-            print("📤 Pushed to GitHub")
+            result = os.system('git push')
+            if result == 0:
+                print("   ✅ Pushed to GitHub successfully")
+            else:
+                print("   ⚠️  Git push failed (this is normal if no changes)")
         
         return count
         
     except Exception as e:
-        print(f"❌ Error indexing: {e}")
+        print(f"   ❌ Error indexing: {e}")
+        import traceback
+        traceback.print_exc()
         return 0
 
 async def main():
@@ -126,6 +151,20 @@ async def main():
             print(f"❌ Cannot access channel: {e}")
             print("   Make sure the bot is added as an admin to the channel!")
             return
+        
+        # Start web server for Render health check
+        async def health_check(request):
+            return web.Response(text=f"✅ Bot is running!\n\nBot: @{me.username}\nChannel: {SOURCE_CHANNEL}\nUpdate Interval: {UPDATE_INTERVAL}s")
+        
+        app = web.Application()
+        app.router.add_get('/', health_check)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        
+        port = int(os.getenv('PORT', 10000))
+        site = web.TCPSite(runner, '0.0.0.0', port)
+        await site.start()
+        print(f"✅ Web server started on port {port}")
         
         print("\n" + "="*50)
         print("Starting indexing loop...")
