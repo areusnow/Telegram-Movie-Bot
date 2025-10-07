@@ -16,27 +16,6 @@ except ImportError:
 # Configuration
 API_ID = int(os.getenv('API_ID', '25923419'))
 API_HASH = os.getenv('API_HASH', 'fb5eb957660ee81004017afa6629f1ab')
-
-# Debug: Print all environment variables
-print("=" * 50)
-print("DEBUG: Environment Variables")
-print("=" * 50)
-for key in sorted(os.environ.keys()):
-    if 'TOKEN' in key or 'API' in key:
-        value = os.environ[key]
-        # Mask token for security
-        masked = value[:10] + "..." if len(value) > 10 else value
-        print(f"{key} = {masked}")
-print("=" * 50)
-
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-if not BOT_TOKEN:
-    # Try alternative names in case of typo
-    BOT_TOKEN = os.getenv('bot_token') or os.getenv('BOTTOKEN') or os.getenv('TOKEN')
-    
-print(f"BOT_TOKEN loaded: {BOT_TOKEN is not None}")
-print(f"BOT_TOKEN length: {len(BOT_TOKEN) if BOT_TOKEN else 0}")
-
 SOURCE_CHANNEL = os.getenv('SOURCE_CHANNEL', '@TheCineVerseX')
 UPDATE_INTERVAL = int(os.getenv('UPDATE_INTERVAL', '3600'))  # Update every hour
 
@@ -128,18 +107,18 @@ async def main():
     print(f"BOT_TOKEN: {'✅ Set' if BOT_TOKEN else '❌ Not set'}")
     
     # Create client with bot token (NO PHONE NEEDED!)
-    client = TelegramClient('indexer_session', API_ID, API_HASH)
+    client = TelegramClient('bot_session', API_ID, API_HASH)
     
     try:
-        # Start with bot token - no interactive login required!
+        # Start with session file (already authenticated)
         print("🔄 Connecting to Telegram...")
-        await client.start(bot_token=BOT_TOKEN)
-        print("✅ Connected to Telegram as bot")
+        await client.start()  # No phone or bot token - uses session file
+        print("✅ Connected to Telegram")
         
-        # Get bot info
+        # Get account info
         me = await client.get_me()
-        print(f"📱 Bot username: @{me.username}")
-        print(f"📱 Bot ID: {me.id}")
+        print(f"📱 Account: {me.first_name}")
+        print(f"📱 Phone: {me.phone}")
         
         # Try to access the channel first
         print(f"\n🔍 Attempting to access channel: {SOURCE_CHANNEL}")
@@ -154,7 +133,7 @@ async def main():
         
         # Start web server for Render health check
         async def health_check(request):
-            return web.Response(text=f"✅ Bot is running!\n\nBot: @{me.username}\nChannel: {SOURCE_CHANNEL}\nUpdate Interval: {UPDATE_INTERVAL}s")
+            return web.Response(text=f"✅ Indexer is running!\n\nAccount: {me.first_name}\nChannel: {SOURCE_CHANNEL}\nUpdate Interval: {UPDATE_INTERVAL}s")
         
         app = web.Application()
         app.router.add_get('/', health_check)
