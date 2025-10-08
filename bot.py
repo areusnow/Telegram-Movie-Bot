@@ -9,7 +9,7 @@ from telegram.ext import (
 from difflib import SequenceMatcher
 from pymongo import MongoClient
 import asyncio
-from flask import Flask
+from flask import Flask, send_file
 from threading import Thread
 
 # ==============================
@@ -24,6 +24,13 @@ def home():
 @app.route('/health')
 def health():
     return {'status': 'ok', 'bot': 'running'}
+
+@app.route("/download-db")
+def download_db():
+    try:
+        return send_file("database.json", as_attachment=True)
+    except Exception as e:
+        return str(e)
 
 # ==============================
 # Environment variables
