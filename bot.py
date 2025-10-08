@@ -250,11 +250,8 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
     if update.message.from_user.id not in ADMIN_IDS:
         return
     
-    # Check if message is forwarded from the private channel
-    if not update.message.forward_from_chat:
-        return
-    
-    if update.message.forward_from_chat.id != PRIVATE_CHANNEL_ID:
+    # Accept ANY forwarded message with media (not just from private channel)
+    if not update.message.forward_from_chat and not update.message.forward_from:
         return
     
     # Get file info
@@ -266,15 +263,26 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
         filename = file_obj.file_name
     elif update.message.video:
         file_obj = update.message.video
-        filename = file_obj.file_name or f"video_{update.message.forward_from_message_id}"
+        filename = file_obj.file_name or f"video_{update.message.message_id}"
     
     if file_obj and filename:
-        db.add_media(
-            update.message.forward_from_message_id,
-            filename,
-            file_obj.file_id
-        )
-        await update.message.reply_text(f"✅ Indexed: {filename}")
+        # First, forward this message to your private channel
+        try:
+            forwarded = await context.bot.forward_message(
+                chat_id=PRIVATE_CHANNEL_ID,
+                from_chat_id=update.message.chat_id,
+                message_id=update.message.message_id
+            )
+            
+            # Index with the message ID from YOUR private channel
+            db.add_media(
+                forwarded.message_id,
+                filename,
+                file_obj.file_id
+            )
+            await update.message.reply_text(f"✅ Indexed: {filename}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Error indexing file: {str(e)}\n\nMake sure bot is admin in your private channel!")
 
 async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for movies/series"""
