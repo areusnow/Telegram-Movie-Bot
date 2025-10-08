@@ -1,18 +1,20 @@
 services:
   - type: web
-    name: telegram-movie-bot
+    name: moviebot
     env: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
-    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: PORT
-        value: 10000
       - key: BOT_TOKEN
         sync: false
       - key: PRIVATE_CHANNEL_ID
         sync: false
       - key: ADMIN_IDS
         sync: false
+      - key: MONGO_URI
+        sync: false
+    autoDeploy: true
+    scaling:
+      minInstances: 1
+      maxInstances: 1
