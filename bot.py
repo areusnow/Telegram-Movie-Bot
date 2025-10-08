@@ -202,7 +202,12 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 Database Statistics:\n\n"
         f"🎬 Movies: {movie_count}\n"
         f"📺 Series: {series_count}\n"
-        f"📝 Total Episodes: {total_episodes}"
+        f"📝 Total Episodes: {total_episodes}\n\n"
+        f"🔧 Debug Info:\n"
+        f"Bot ID: {context.bot.id}\n"
+        f"Your ID: {update.message.from_user.id}\n"
+        f"Admin IDs: {ADMIN_IDS}\n"
+        f"Channel ID: {PRIVATE_CHANNEL_ID}"
     )
     
     await update.message.reply_text(stats_text)
@@ -241,20 +246,18 @@ async def index_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await msg.edit_text(f"❌ Error during indexing: {str(e)}")
 
-async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle forwarded messages for indexing"""
+async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle any media message (forwarded or direct) for indexing"""
     # Check if update has message
     if not update.message:
         return
     
+    # Check if user is admin
     if update.message.from_user.id not in ADMIN_IDS:
+        await update.message.reply_text(f"❌ Not authorized. Your ID: {update.message.from_user.id}\nAdmin IDs: {ADMIN_IDS}")
         return
     
-    # Accept ANY forwarded message with media (not just from private channel)
-    if not update.message.forward_from_chat and not update.message.forward_from:
-        return
-    
-    # Get file info
+    # Get file info from document or video
     file_obj = None
     filename = None
     
@@ -265,24 +268,27 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
         file_obj = update.message.video
         filename = file_obj.file_name or f"video_{update.message.message_id}"
     
-    if file_obj and filename:
-        # First, forward this message to your private channel
-        try:
-            forwarded = await context.bot.forward_message(
-                chat_id=PRIVATE_CHANNEL_ID,
-                from_chat_id=update.message.chat_id,
-                message_id=update.message.message_id
-            )
-            
-            # Index with the message ID from YOUR private channel
-            db.add_media(
-                forwarded.message_id,
-                filename,
-                file_obj.file_id
-            )
-            await update.message.reply_text(f"✅ Indexed: {filename}")
-        except Exception as e:
-            await update.message.reply_text(f"❌ Error indexing file: {str(e)}\n\nMake sure bot is admin in your private channel!")
+    # If no media, ignore
+    if not file_obj or not filename:
+        return
+    
+    # First, forward/send this message to your private channel
+    try:
+        forwarded = await context.bot.forward_message(
+            chat_id=PRIVATE_CHANNEL_ID,
+            from_chat_id=update.message.chat_id,
+            message_id=update.message.message_id
+        )
+        
+        # Index with the message ID from YOUR private channel
+        db.add_media(
+            forwarded.message_id,
+            filename,
+            file_obj.file_id
+        )
+        await update.message.reply_text(f"✅ Indexed: {filename}\nMessage ID: {forwarded.message_id}")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {str(e)}\n\nMake sure:\n1. Bot is admin in channel\n2. Channel ID is correct: {PRIVATE_CHANNEL_ID}")
 
 async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for movies/series"""
@@ -490,7 +496,7 @@ def main():
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("stats", stats))
         application.add_handler(CommandHandler("index", index_channel))
-        application.add_handler(MessageHandler(filters.FORWARDED & ~filters.COMMAND, handle_forwarded_message))
+        application.add_handler(MessageHandler((filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND, handle_media_message))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_media))
         application.add_handler(CallbackQueryHandler(button_callback))
         
