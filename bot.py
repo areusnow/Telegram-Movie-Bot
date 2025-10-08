@@ -8,6 +8,19 @@ from telegram.ext import (
 )
 from difflib import SequenceMatcher
 import asyncio
+from flask import Flask
+from threading import Thread
+
+# Flask app for health check
+app = Flask(__name__)
+
+@app.route('/health')
+def health():
+    return {'status': 'ok', 'bot': 'running'}
+
+@app.route('/')
+def home():
+    return 'Telegram Movie Bot is Running!'
 
 # Configuration from environment variables
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
@@ -455,6 +468,14 @@ async def show_episode_qualities(query, series_key, season_num, episode_num):
 def main():
     """Start the bot"""
     try:
+        # Start Flask server in a separate thread
+        port = int(os.environ.get('PORT', 10000))
+        flask_thread = Thread(target=lambda: app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False))
+        flask_thread.daemon = True
+        flask_thread.start()
+        print(f"Flask server started on port {port}")
+        
+        # Start Telegram bot
         application = Application.builder().token(BOT_TOKEN).build()
         
         # Handlers
