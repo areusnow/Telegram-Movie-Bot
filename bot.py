@@ -270,6 +270,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("get:"):
         _, message_id = data.split(":", 1)
+    
+        # 🔹 Extract the previous "Back" button callback before changing the message
+        prev_keyboard = query.message.reply_markup.inline_keyboard if query.message.reply_markup else []
+        back_callback = None
+        for row in prev_keyboard:
+            for btn in row:
+                if "Back to Episodes" in btn.text:
+                    back_callback = btn.callback_data
+                    break
+            if back_callback:
+                break
+    
         await query.edit_message_text("📤 Sending file...")
     
         try:
@@ -279,15 +291,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=int(message_id)
             )
     
-            # After sending, show the same keyboard again (for 60s)
+            # 🔹 Show "File sent!" and restore the back button
+            keyboard = []
+            if back_callback:
+                keyboard.append([InlineKeyboardButton("⬅️ Back to Episodes", callback_data=back_callback)])
+    
             await query.edit_message_text(
                 "✅ File sent! You can select another quality or go back to episodes:",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("⬅️ Back to Episodes", callback_data=query.message.reply_markup.inline_keyboard[-1][0].callback_data)]
-                ])
+                reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
             )
     
-            # Optional: remove buttons after 60s
+            # 🔹 Remove buttons after 60 seconds (optional)
             await asyncio.sleep(60)
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
@@ -296,6 +310,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
         except Exception as e:
             await query.edit_message_text(f"❌ Error: {e}")
+
 
 
 # ==============================
