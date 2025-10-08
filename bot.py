@@ -167,6 +167,19 @@ class MediaDatabase:
         results['series'].sort(key=lambda x: x['ratio'], reverse=True)
         
         return results
+    
+    def get_file_info(self, data_type, *args):
+        """Get file information from database"""
+        try:
+            if data_type == "movie":
+                movie_key, quality = args
+                return self.data['movies'][movie_key]['qualities'][quality]
+            elif data_type == "episode":
+                series_key, season_num, episode_num, quality = args
+                return self.data['series'][series_key]['seasons'][season_num][episode_num][quality]
+        except KeyError:
+            return None
+        return None
 
 # Initialize database
 db = MediaDatabase()
@@ -206,8 +219,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔧 Debug Info:\n"
         f"Bot ID: {context.bot.id}\n"
         f"Your ID: {update.message.from_user.id}\n"
-        f"Admin IDs: {ADMIN_IDS}\n"
-        f"Channel ID: {PRIVATE_CHANNEL_ID}"
+        f"Admin Status: {'Yes ✅' if update.message.from_user.id in ADMIN_IDS else 'No ❌'}"
     )
     
     await update.message.reply_text(stats_text)
@@ -218,33 +230,13 @@ async def index_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ This command is for admins only!")
         return
     
-    msg = await update.message.reply_text("🔄 Starting indexing process...\nThis may take a while.")
-    
-    try:
-        indexed_count = 0
-        chat = await context.bot.get_chat(PRIVATE_CHANNEL_ID)
-        
-        # Iterate through channel messages
-        offset_id = 0
-        limit = 100
-        
-        while True:
-            try:
-                # This is a workaround since get_chat_history doesn't exist
-                # We'll need to use a different approach
-                await msg.edit_text(
-                    f"⚠️ Note: Auto-indexing requires manual forwarding.\n\n"
-                    f"Please forward messages from your channel to this bot.\n"
-                    f"The bot will automatically index them.\n\n"
-                    f"Or use the manual indexing method below."
-                )
-                break
-            except Exception as e:
-                await msg.edit_text(f"❌ Error: {str(e)}")
-                break
-        
-    except Exception as e:
-        await msg.edit_text(f"❌ Error during indexing: {str(e)}")
+    await update.message.reply_text(
+        "📝 Manual Indexing Instructions:\n\n"
+        "1. Forward media files (videos/documents) from your channel to this bot\n"
+        "2. The bot will automatically index them\n"
+        "3. Each file will be confirmed as it's indexed\n\n"
+        "Note: Make sure the bot is an admin in your private channel!"
+    )
 
 async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle any media message (forwarded or direct) for indexing"""
@@ -254,7 +246,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     
     # Check if user is admin
     if update.message.from_user.id not in ADMIN_IDS:
-        await update.message.reply_text(f"❌ Not authorized. Your ID: {update.message.from_user.id}\nAdmin IDs: {ADMIN_IDS}")
+        await update.message.reply_text(f"❌ Not authorized to index files.\n\nYour ID: {update.message.from_user.id}")
         return
     
     # Get file info from document or video
@@ -266,29 +258,50 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         filename = file_obj.file_name
     elif update.message.video:
         file_obj = update.message.video
-        filename = file_obj.file_name or f"video_{update.message.message_id}"
+        filename = file_obj.file_name or f"video_{update.message.message_id}.mp4"
     
     # If no media, ignore
     if not file_obj or not filename:
         return
     
-    # First, forward/send this message to your private channel
-    try:
-        forwarded = await context.bot.forward_message(
-            chat_id=PRIVATE_CHANNEL_ID,
-            from_chat_id=update.message.chat_id,
-            message_id=update.message.message_id
-        )
-        
-        # Index with the message ID from YOUR private channel
+    # Check if message is forwarded from the private channel
+    if update.message.forward_from_chat and update.message.forward_from_chat.id == PRIVATE_CHANNEL_ID:
+        # Message is already from the private channel, just index it
         db.add_media(
-            forwarded.message_id,
+            update.message.forward_from_message_id,
             filename,
             file_obj.file_id
         )
-        await update.message.reply_text(f"✅ Indexed: {filename}\nMessage ID: {forwarded.message_id}")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}\n\nMake sure:\n1. Bot is admin in channel\n2. Channel ID is correct: {PRIVATE_CHANNEL_ID}")
+        await update.message.reply_text(
+            f"✅ Indexed from channel: {filename}\n"
+            f"Message ID: {update.message.forward_from_message_id}"
+        )
+    else:
+        # Forward this message to private channel first
+        try:
+            forwarded = await context.bot.forward_message(
+                chat_id=PRIVATE_CHANNEL_ID,
+                from_chat_id=update.message.chat_id,
+                message_id=update.message.message_id
+            )
+            
+            # Index with the message ID from private channel
+            db.add_media(
+                forwarded.message_id,
+                filename,
+                file_obj.file_id
+            )
+            await update.message.reply_text(
+                f"✅ Forwarded and indexed: {filename}\n"
+                f"Message ID: {forwarded.message_id}"
+            )
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Error: {str(e)}\n\n"
+                f"Make sure:\n"
+                f"1. Bot is admin in channel\n"
+                f"2. Channel ID is correct: {PRIVATE_CHANNEL_ID}"
+            )
 
 async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for movies/series"""
@@ -297,6 +310,10 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     query = update.message.text.strip()
+    
+    # Ignore commands
+    if query.startswith('/'):
+        return
     
     if len(query) < 2:
         await update.message.reply_text("Please enter at least 2 characters to search.")
@@ -367,17 +384,54 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_episode_qualities(query, series_key, int(season_num), int(episode_num))
     
     elif data.startswith("get:"):
-        # Send the actual file link
-        _, message_id = data.split(":", 1)
-        link = f"https://t.me/c/{str(PRIVATE_CHANNEL_ID)[4:]}/{message_id}"
+        # Send the file directly to the user
+        parts = data.split(":")
         
-        keyboard = [[InlineKeyboardButton("📥 Download", url=link)]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            "Click the button below to access the file:",
-            reply_markup=reply_markup
-        )
+        try:
+            # Edit message to show processing
+            await query.edit_message_text("📤 Sending file, please wait...")
+            
+            if len(parts) == 2:
+                # Simple format: get:message_id
+                _, message_id = parts
+                file_info = None
+            else:
+                # Extended format with file info
+                message_id = parts[1]
+                file_info = None
+            
+            # Try to forward the message from private channel
+            try:
+                forwarded_message = await context.bot.forward_message(
+                    chat_id=query.from_user.id,
+                    from_chat_id=PRIVATE_CHANNEL_ID,
+                    message_id=int(message_id)
+                )
+                await query.edit_message_text("✅ File sent successfully! Check your messages above.")
+                
+            except Exception as forward_error:
+                # If forwarding fails, try copying the message
+                try:
+                    copied_message = await context.bot.copy_message(
+                        chat_id=query.from_user.id,
+                        from_chat_id=PRIVATE_CHANNEL_ID,
+                        message_id=int(message_id)
+                    )
+                    await query.edit_message_text("✅ File sent successfully! Check your messages above.")
+                    
+                except Exception as copy_error:
+                    # If both methods fail, show error
+                    await query.edit_message_text(
+                        f"❌ Error sending file.\n\n"
+                        "This might happen if:\n"
+                        "1. The file was deleted from the channel\n"
+                        "2. The bot lost admin access to the channel\n"
+                        "3. File size exceeds Telegram limits\n\n"
+                        "Please contact the admin."
+                    )
+                    
+        except Exception as e:
+            await query.edit_message_text(f"❌ Unexpected error: {str(e)}")
     
     elif data.startswith("back:"):
         back_to = data.split(":", 1)[1]
@@ -393,6 +447,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_movie_qualities(query, movie_key):
     """Show available qualities for a movie"""
+    if movie_key not in db.data['movies']:
+        await query.edit_message_text("❌ Movie not found in database.")
+        return
+    
     movie = db.data['movies'][movie_key]
     
     keyboard = []
@@ -412,6 +470,10 @@ async def show_movie_qualities(query, movie_key):
 
 async def show_series_seasons(query, series_key):
     """Show available seasons for a series"""
+    if series_key not in db.data['series']:
+        await query.edit_message_text("❌ Series not found in database.")
+        return
+    
     series = db.data['series'][series_key]
     
     keyboard = []
@@ -431,7 +493,16 @@ async def show_series_seasons(query, series_key):
 
 async def show_season_episodes(query, series_key, season_num):
     """Show available episodes for a season"""
+    if series_key not in db.data['series']:
+        await query.edit_message_text("❌ Series not found in database.")
+        return
+    
     series = db.data['series'][series_key]
+    
+    if season_num not in series['seasons']:
+        await query.edit_message_text("❌ Season not found in database.")
+        return
+    
     season = series['seasons'][season_num]
     
     keyboard = []
@@ -456,7 +527,16 @@ async def show_season_episodes(query, series_key, season_num):
 
 async def show_episode_qualities(query, series_key, season_num, episode_num):
     """Show available qualities for an episode"""
+    if series_key not in db.data['series']:
+        await query.edit_message_text("❌ Series not found in database.")
+        return
+    
     series = db.data['series'][series_key]
+    
+    if season_num not in series['seasons'] or episode_num not in series['seasons'][season_num]:
+        await query.edit_message_text("❌ Episode not found in database.")
+        return
+    
     episode = series['seasons'][season_num][episode_num]
     
     keyboard = []
@@ -475,35 +555,63 @@ async def show_episode_qualities(query, series_key, season_num, episode_num):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(
-        f"📺 {series['title']}\nS{season_num}E{episode_num}\n\nSelect Quality:",
+        f"📺 {series['title']}\nS{season_num:02d}E{episode_num:02d}\n\nSelect Quality:",
         reply_markup=reply_markup
     )
 
 def main():
     """Start the bot"""
     try:
-        # Start Flask server in a separate thread
+        # Start Flask server in a separate thread for health checks
         port = int(os.environ.get('PORT', 10000))
         flask_thread = Thread(target=lambda: app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False))
         flask_thread.daemon = True
         flask_thread.start()
         print(f"Flask server started on port {port}")
         
+        # Validate environment variables
+        if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+            print("❌ Error: Please set the BOT_TOKEN environment variable")
+            return
+        
+        print(f"Starting bot...")
+        print(f"Admin IDs: {ADMIN_IDS}")
+        print(f"Private Channel ID: {PRIVATE_CHANNEL_ID}")
+        
         # Start Telegram bot
         application = Application.builder().token(BOT_TOKEN).build()
         
-        # Handlers
+        # Add handlers
         application.add_handler(CommandHandler("start", start))
         application.add_handler(CommandHandler("stats", stats))
         application.add_handler(CommandHandler("index", index_channel))
-        application.add_handler(MessageHandler((filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND, handle_media_message))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_media))
+        
+        # Media handler for admins
+        application.add_handler(MessageHandler(
+            (filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND, 
+            handle_media_message
+        ))
+        
+        # Text handler for searches
+        application.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            search_media
+        ))
+        
+        # Callback handler for buttons
         application.add_handler(CallbackQueryHandler(button_callback))
         
-        print("Bot is running...")
-        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+        print("✅ Bot is running...")
+        print("Press Ctrl+C to stop")
+        
+        # Start polling
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+        
     except Exception as e:
-        print(f"Error starting bot: {e}")
+        print(f"❌ Error starting bot: {e}")
         raise
 
 if __name__ == "__main__":
