@@ -273,25 +273,30 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📤 Sending file...")
     
         try:
-            # Forward the file from your private channel to the user
             await context.bot.forward_message(
                 chat_id=query.from_user.id,
                 from_chat_id=PRIVATE_CHANNEL_ID,
                 message_id=int(message_id)
             )
     
-            # Notify the user and keep the buttons for 60 seconds
+            # After sending, show the same keyboard again (for 60s)
             await query.edit_message_text(
-                "✅ File sent! Use buttons below for more episodes.",
-                reply_markup=query.message.reply_markup  # Keep old buttons visible
+                "✅ File sent! You can select another quality or go back to episodes:",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("⬅️ Back to Episodes", callback_data=query.message.reply_markup.inline_keyboard[-1][0].callback_data)]
+                ])
             )
     
-            # Wait 60 seconds before clearing the buttons (optional)
+            # Optional: remove buttons after 60s
             await asyncio.sleep(60)
-            await query.edit_message_reply_markup(reply_markup=None)
+            try:
+                await query.edit_message_reply_markup(reply_markup=None)
+            except:
+                pass
     
         except Exception as e:
             await query.edit_message_text(f"❌ Error: {e}")
+
 
 # ==============================
 # Inline Display Functions
