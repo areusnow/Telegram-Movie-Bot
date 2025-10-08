@@ -46,7 +46,7 @@ DB_NAME = "MovieBot"
 # ==============================
 class MediaDatabase:
     def __init__(self):
-        self.client = MongoClient(MONGO_URI)
+        self.client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
         self.db = self.client[DB_NAME]
         self.movies = self.db["movies"]
         self.series = self.db["series"]
