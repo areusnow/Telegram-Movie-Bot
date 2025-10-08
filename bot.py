@@ -271,13 +271,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("get:"):
         _, message_id = data.split(":", 1)
         await query.edit_message_text("📤 Sending file...")
+    
         try:
+            # Forward the file from your private channel to the user
             await context.bot.forward_message(
                 chat_id=query.from_user.id,
                 from_chat_id=PRIVATE_CHANNEL_ID,
                 message_id=int(message_id)
             )
-            await query.edit_message_text("✅ File sent! Use buttons below for more episodes.")
+    
+            # Notify the user and keep the buttons for 60 seconds
+            await query.edit_message_text(
+                "✅ File sent! Use buttons below for more episodes.",
+                reply_markup=query.message.reply_markup  # Keep old buttons visible
+            )
+    
+            # Wait 60 seconds before clearing the buttons (optional)
+            await asyncio.sleep(60)
+            await query.edit_message_reply_markup(reply_markup=None)
+    
         except Exception as e:
             await query.edit_message_text(f"❌ Error: {e}")
 
