@@ -1,3 +1,33 @@
+# ==================== requirements.txt ====================
+python-telegram-bot==21.5
+
+# ==================== .gitignore ====================
+# Add this to .gitignore file
+media_database.json
+__pycache__/
+*.pyc
+.env
+*.log
+
+# ==================== render.yaml ====================
+# Optional: For automatic deployment configuration
+services:
+  - type: web
+    name: telegram-movie-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: BOT_TOKEN
+        sync: false
+      - key: PRIVATE_CHANNEL_ID
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+
+# ==================== Updated bot.py with environment variables ====================
 import os
 import re
 import json
@@ -230,6 +260,10 @@ async def index_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle forwarded messages for indexing"""
+    # Check if update has message
+    if not update.message:
+        return
+    
     if update.message.from_user.id not in ADMIN_IDS:
         return
     
@@ -261,6 +295,10 @@ async def handle_forwarded_message(update: Update, context: ContextTypes.DEFAULT
 
 async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Search for movies/series"""
+    # Check if update has message
+    if not update.message or not update.message.text:
+        return
+    
     query = update.message.text.strip()
     
     if len(query) < 2:
@@ -446,18 +484,22 @@ async def show_episode_qualities(query, series_key, season_num, episode_num):
 
 def main():
     """Start the bot"""
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("stats", stats))
-    application.add_handler(CommandHandler("index", index_channel))
-    application.add_handler(MessageHandler(filters.FORWARDED & ~filters.COMMAND, handle_forwarded_message))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_media))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    
-    print("Bot is running...")
-    application.run_polling()
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        # Handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("stats", stats))
+        application.add_handler(CommandHandler("index", index_channel))
+        application.add_handler(MessageHandler(filters.FORWARDED & ~filters.COMMAND, handle_forwarded_message))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_media))
+        application.add_handler(CallbackQueryHandler(button_callback))
+        
+        print("Bot is running...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    except Exception as e:
+        print(f"Error starting bot: {e}")
+        raise
 
 if __name__ == "__main__":
     main()
