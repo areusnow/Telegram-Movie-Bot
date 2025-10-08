@@ -1,33 +1,3 @@
-# ==================== requirements.txt ====================
-python-telegram-bot==21.5
-
-# ==================== .gitignore ====================
-# Add this to .gitignore file
-media_database.json
-__pycache__/
-*.pyc
-.env
-*.log
-
-# ==================== render.yaml ====================
-# Optional: For automatic deployment configuration
-services:
-  - type: web
-    name: telegram-movie-bot
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: BOT_TOKEN
-        sync: false
-      - key: PRIVATE_CHANNEL_ID
-        sync: false
-      - key: ADMIN_IDS
-        sync: false
-
-# ==================== Updated bot.py with environment variables ====================
 import os
 import re
 import json
