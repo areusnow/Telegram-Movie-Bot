@@ -264,33 +264,36 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not file_obj or not filename:
         return
     
-    # Check if message is forwarded from the private channel
-    if update.message.forward_from_chat and update.message.forward_from_chat.id == PRIVATE_CHANNEL_ID:
-        # Message is already from the private channel, just index it
+    # 💡 Safely detect forwarded or direct uploads (handles all cases)
+    fwd_chat = getattr(update.message, "forward_from_chat", None) or getattr(update.message, "sender_chat", None)
+    fwd_msg_id = getattr(update.message, "forward_from_message_id", None)
+    
+    if fwd_chat and fwd_chat.id == PRIVATE_CHANNEL_ID and fwd_msg_id:
+        # ✅ Forwarded from your own private channel
         db.add_media(
-            update.message.forward_from_message_id,
+            fwd_msg_id,
             filename,
             file_obj.file_id
         )
-        await update.message.reply_text(
-            f"✅ Indexed from channel: {filename}\n"
-            f"Message ID: {update.message.forward_from_message_id}"
-        )
+        print(f"Indexed existing message from private channel: {filename}")
+    
     else:
-        # Forward this message to private channel first
+        # 💡 Not from your private channel — forward and index
         try:
             forwarded = await context.bot.forward_message(
                 chat_id=PRIVATE_CHANNEL_ID,
                 from_chat_id=update.message.chat_id,
                 message_id=update.message.message_id
             )
-            
-            # Index with the message ID from private channel
             db.add_media(
                 forwarded.message_id,
                 filename,
                 file_obj.file_id
             )
+            print(f"✅ Forwarded and indexed: {filename}")
+        except Exception as e:
+            print(f"❌ Failed to forward or index {filename}: {e}")
+
             await update.message.reply_text(
                 f"✅ Forwarded and indexed: {filename}\n"
                 f"Message ID: {forwarded.message_id}"
