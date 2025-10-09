@@ -304,11 +304,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📤 Sending file...")
     
         try:
-            await context.bot.forward_message(
+            # await context.bot.forward_message(
+              #  chat_id=query.from_user.id,
+               # from_chat_id=PRIVATE_CHANNEL_ID,
+                #message_id=int(message_id)
+            #)
+
+            await context.bot.copy_message(
                 chat_id=query.from_user.id,
                 from_chat_id=PRIVATE_CHANNEL_ID,
                 message_id=int(message_id)
             )
+
     
             # Show "File sent!" and restore the back button
             keyboard = []
