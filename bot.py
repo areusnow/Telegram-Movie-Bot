@@ -167,6 +167,17 @@ class MediaDatabase:
             except Exception:
                 return None
 
+    # Get all available qualities for a season
+    def get_season_qualities(self, series_key, season_num):
+        s = self.series.find_one({"key": series_key})
+        if not s:
+            return []
+        season = s['seasons'].get(str(season_num), {})
+        qualities = set()
+        for episode in season.values():
+            qualities.update(episode.keys())
+        return sorted(qualities)
+
 
 # ==============================
 # Initialize DB
@@ -264,6 +275,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, series_key, season_num = data.split(":", 2)
         await show_season_episodes(query, series_key, int(season_num))
 
+    elif data.startswith("sendall:"):
+        _, series_key, season_num = data.split(":", 2)
+        await show_sendall_qualities(query, series_key, int(season_num))
+
+    elif data.startswith("sendallq:"):
+        _, series_key, season_num, quality = data.split(":", 3)
+        await send_all_episodes(query, context, series_key, int(season_num), quality)
+
     elif data.startswith("episode:"):
         _, series_key, season_num, episode_num = data.split(":", 3)
         await show_episode_qualities(query, series_key, int(season_num), int(episode_num))
@@ -271,7 +290,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith("get:"):
         _, message_id = data.split(":", 1)
     
-        # 🔹 Extract the previous "Back" button callback before changing the message
+        # Extract the previous "Back" button callback before changing the message
         prev_keyboard = query.message.reply_markup.inline_keyboard if query.message.reply_markup else []
         back_callback = None
         for row in prev_keyboard:
@@ -291,7 +310,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=int(message_id)
             )
     
-            # 🔹 Show "File sent!" and restore the back button
+            # Show "File sent!" and restore the back button
             keyboard = []
             if back_callback:
                 keyboard.append([InlineKeyboardButton("⬅️ Back to Episodes", callback_data=back_callback)])
@@ -301,7 +320,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
             )
     
-            # 🔹 Remove buttons after 60 seconds (optional)
+            # Remove buttons after 60 seconds (optional)
             await asyncio.sleep(60)
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
@@ -345,15 +364,99 @@ async def show_series_seasons(query, series_key):
 async def show_season_episodes(query, series_key, season_num):
     s = db.series.find_one({"key": series_key})
     season = s['seasons'].get(str(season_num), {})
-    keyboard = [
-        [InlineKeyboardButton(f"Episode {ep}", callback_data=f"episode:{series_key}:{season_num}:{ep}")]
-        for ep in sorted(season.keys(), key=lambda x: int(x))
-    ]
+    keyboard = []
+    
+    # Add "Send All" button at the top
+    keyboard.append([InlineKeyboardButton("📦 Send All Episodes", callback_data=f"sendall:{series_key}:{season_num}")])
+    
+    # Add individual episode buttons
+    for ep in sorted(season.keys(), key=lambda x: int(x)):
+        keyboard.append([InlineKeyboardButton(f"Episode {ep}", callback_data=f"episode:{series_key}:{season_num}:{ep}")])
+    
     keyboard.append([InlineKeyboardButton("⬅️ Back to Seasons", callback_data=f"series:{series_key}")])
     await query.edit_message_text(
-        f"📺 {s['title']} - Season {season_num}\nSelect Episode:",
+        f"📺 {s['title']} - Season {season_num}\nSelect Episode or Send All:",
         reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+async def show_sendall_qualities(query, series_key, season_num):
+    """Show quality options for sending all episodes"""
+    qualities = db.get_season_qualities(series_key, season_num)
+    if not qualities:
+        return await query.edit_message_text("❌ No episodes found for this season.")
+    
+    s = db.series.find_one({"key": series_key})
+    keyboard = []
+    
+    for q in qualities:
+        keyboard.append([InlineKeyboardButton(f"📥 Send All in {q}", callback_data=f"sendallq:{series_key}:{season_num}:{q}")])
+    
+    keyboard.append([InlineKeyboardButton("⬅️ Back to Episodes", callback_data=f"season:{series_key}:{season_num}")])
+    
+    await query.edit_message_text(
+        f"📺 {s['title']} - Season {season_num}\nSelect Quality for All Episodes:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def send_all_episodes(query, context, series_key, season_num, quality):
+    """Send all episodes of a season in the selected quality"""
+    s = db.series.find_one({"key": series_key})
+    if not s:
+        return await query.edit_message_text("❌ Series not found.")
+    
+    season = s['seasons'].get(str(season_num), {})
+    episodes_to_send = []
+    
+    # Collect all episodes that have the selected quality
+    for ep_num in sorted(season.keys(), key=lambda x: int(x)):
+        episode = season[ep_num]
+        if quality in episode:
+            episodes_to_send.append((int(ep_num), episode[quality]['message_id']))
+    
+    if not episodes_to_send:
+        return await query.edit_message_text(f"❌ No episodes found in {quality} quality.")
+    
+    # Update message to show progress
+    keyboard = [[InlineKeyboardButton("⬅️ Back to Episodes", callback_data=f"season:{series_key}:{season_num}")]]
+    await query.edit_message_text(
+        f"📤 Sending {len(episodes_to_send)} episodes in {quality}...\n\nPlease wait, this may take a moment.",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    # Send all episodes in order
+    sent_count = 0
+    failed_count = 0
+    
+    for ep_num, message_id in episodes_to_send:
+        try:
+            await context.bot.forward_message(
+                chat_id=query.from_user.id,
+                from_chat_id=PRIVATE_CHANNEL_ID,
+                message_id=message_id
+            )
+            sent_count += 1
+            # Small delay to avoid hitting rate limits
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            print(f"❌ Error sending episode {ep_num}: {e}")
+            failed_count += 1
+    
+    # Update with final status
+    status_text = f"✅ Successfully sent {sent_count} episodes in {quality}!"
+    if failed_count > 0:
+        status_text += f"\n⚠️ {failed_count} episodes failed to send."
+    
+    await query.edit_message_text(
+        status_text + "\n\nYou can select another option:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    # Remove buttons after 60 seconds
+    await asyncio.sleep(60)
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except:
+        pass
 
 async def show_episode_qualities(query, series_key, season_num, episode_num):
     s = db.series.find_one({"key": series_key})
