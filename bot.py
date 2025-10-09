@@ -214,6 +214,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         series_key = data.split(":", 1)[1]
         await show_series_seasons(query, series_key)
 
+    elif data.startswith("get:"):
+        # Extract the message_id of the file stored in MongoDB
+        _, message_id = data.split(":", 1)
+        
+        await query.answer("Sending file...")
+        try:
+            # Send the file to the user without revealing the original source
+            await context.bot.copy_message(
+                chat_id=query.from_user.id,         # the user
+                from_chat_id=PRIVATE_CHANNEL_ID,    # your private channel
+                message_id=int(message_id)          # the message ID in your channel
+            )
+            await query.edit_message_text("✅ File sent!")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Error sending file: {e}")
+
+
 # Example helper functions for movie/series buttons
 async def show_movie_qualities(query, movie_key):
     movie = db.movies.find_one({"key": movie_key})
