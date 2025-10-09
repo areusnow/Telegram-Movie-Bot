@@ -41,6 +41,9 @@ ADMIN_IDS = [int(id.strip()) for id in os.environ.get("ADMIN_IDS", "123456789").
 MONGO_URI = os.environ.get("MONGO_URI", "YOUR_MONGO_CONNECTION_STRING_HERE")
 DB_NAME = "MovieBot"
 
+# Pagination settings
+ITEMS_PER_PAGE = 8  # Number of items to show per page
+
 # ==============================
 # Database Class (MongoDB)
 # ==============================
@@ -243,16 +246,80 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     results = db.fuzzy_search(query)
     if not results['movies'] and not results['series']:
         return await update.message.reply_text(f"❌ No results found for '{query}'")
+    
+    # Show first page
+    await show_search_results_page(update.message, query, results, 0)
+
+async def show_search_results_page(message, query, results, page):
+    """Display paginated search results"""
+    all_items = []
+    
+    # Combine movies and series with type indicator
+    for m in results['movies']:
+        all_items.append(('movie', m))
+    for s in results['series']:
+        all_items.append(('series', s))
+    
+    total_items = len(all_items)
+    total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
+    
+    # Calculate slice for current page
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, total_items)
+    page_items = all_items[start_idx:end_idx]
+    
     keyboard = []
-    if results['movies']:
-        keyboard.append([InlineKeyboardButton("🎬 MOVIES", callback_data="none")])
-        for m in results['movies'][:10]:
-            keyboard.append([InlineKeyboardButton(m['title'], callback_data=f"movie:{m['key']}")])
-    if results['series']:
-        keyboard.append([InlineKeyboardButton("📺 SERIES", callback_data="none")])
-        for s in results['series'][:10]:
-            keyboard.append([InlineKeyboardButton(s['title'], callback_data=f"series:{s['key']}")])
-    await update.message.reply_text(f"🔍 Results for '{query}':", reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    # Add "Send All on This Page" button
+    if page_items:
+        keyboard.append([InlineKeyboardButton("📦 Send All on This Page", callback_data=f"sendpage:{page}:{query}")])
+    
+    # Add items for current page
+    has_movies = False
+    has_series = False
+    
+    for item_type, item in page_items:
+        if item_type == 'movie' and not has_movies:
+            keyboard.append([InlineKeyboardButton("🎬 MOVIES", callback_data="none")])
+            has_movies = True
+        elif item_type == 'series' and not has_series:
+            keyboard.append([InlineKeyboardButton("📺 SERIES", callback_data="none")])
+            has_series = True
+        
+        if item_type == 'movie':
+            keyboard.append([InlineKeyboardButton(
+                item['title'], 
+                callback_data=f"movie:{item['key']}"
+            )])
+        else:
+            keyboard.append([InlineKeyboardButton(
+                item['title'], 
+                callback_data=f"series:{item['key']}"
+            )])
+    
+    # Add pagination buttons
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"page:{page-1}:{query}"))
+    
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton("➡️ Next", callback_data=f"page:{page+1}:{query}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Add page indicator
+    page_info = f"Page {page + 1}/{total_pages}"
+    
+    text = f"🔍 Results for '{query}'\n{page_info} ({total_items} total results)"
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Send or edit message
+    if hasattr(message, 'edit_text'):
+        await message.edit_text(text, reply_markup=reply_markup)
+    else:
+        await message.reply_text(text, reply_markup=reply_markup)
 
 # ==============================
 # Button Callback Handlers
@@ -263,7 +330,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     if data == "none": return
 
-    if data.startswith("movie:"):
+    if data.startswith("page:"):
+        _, page_str, search_query = data.split(":", 2)
+        page = int(page_str)
+        results = db.fuzzy_search(search_query)
+        await show_search_results_page(query.message, search_query, results, page)
+
+    elif data.startswith("sendpage:"):
+        _, page_str, search_query = data.split(":", 2)
+        page = int(page_str)
+        await send_all_on_page(query, context, search_query, page)
+
+    elif data.startswith("movie:"):
         movie_key = data.split(":", 1)[1]
         await show_movie_qualities(query, movie_key)
 
@@ -295,7 +373,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         back_callback = None
         for row in prev_keyboard:
             for btn in row:
-                if "Back to Episodes" in btn.text:
+                if "Back to Episodes" in btn.text or "Back to" in btn.text:
                     back_callback = btn.callback_data
                     break
             if back_callback:
@@ -304,30 +382,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("📤 Sending file...")
     
         try:
-            # await context.bot.forward_message(
-              #  chat_id=query.from_user.id,
-               # from_chat_id=PRIVATE_CHANNEL_ID,
-                #message_id=int(message_id)
-            #)
-
             await context.bot.copy_message(
                 chat_id=query.from_user.id,
                 from_chat_id=PRIVATE_CHANNEL_ID,
                 message_id=int(message_id)
             )
-
     
             # Show "File sent!" and restore the back button
             keyboard = []
             if back_callback:
-                keyboard.append([InlineKeyboardButton("⬅️ Back to Episodes", callback_data=back_callback)])
+                keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data=back_callback)])
     
             await query.edit_message_text(
-                "✅ File sent! You can select another quality or go back to episodes:",
+                "✅ File sent! You can select another quality or go back:",
                 reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
             )
     
-            # Remove buttons after 60 seconds (optional)
+            # Remove buttons after 60 seconds
             await asyncio.sleep(60)
             try:
                 await query.edit_message_reply_markup(reply_markup=None)
@@ -337,7 +408,99 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await query.edit_message_text(f"❌ Error: {e}")
 
-
+async def send_all_on_page(query, context, search_query, page):
+    """Send all files visible on the current search results page"""
+    results = db.fuzzy_search(search_query)
+    
+    all_items = []
+    for m in results['movies']:
+        all_items.append(('movie', m))
+    for s in results['series']:
+        all_items.append(('series', s))
+    
+    # Get items for current page
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, len(all_items))
+    page_items = all_items[start_idx:end_idx]
+    
+    await query.edit_message_text(
+        f"📤 Sending all files on page {page + 1}...\n\nPlease wait, this may take a moment."
+    )
+    
+    sent_count = 0
+    failed_count = 0
+    
+    for item_type, item in page_items:
+        try:
+            if item_type == 'movie':
+                # Send all qualities of the movie
+                movie = db.movies.find_one({"key": item['key']})
+                for quality, data in movie['qualities'].items():
+                    try:
+                        await context.bot.copy_message(
+                            chat_id=query.from_user.id,
+                            from_chat_id=PRIVATE_CHANNEL_ID,
+                            message_id=data['message_id']
+                        )
+                        sent_count += 1
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        print(f"❌ Error sending movie {item['title']} ({quality}): {e}")
+                        failed_count += 1
+            
+            else:  # series
+                # Send first episode of first season in best quality
+                s = db.series.find_one({"key": item['key']})
+                if s and s['seasons']:
+                    first_season = sorted(s['seasons'].keys(), key=lambda x: int(x))[0]
+                    season = s['seasons'][first_season]
+                    if season:
+                        first_ep = sorted(season.keys(), key=lambda x: int(x))[0]
+                        episode = season[first_ep]
+                        # Get best quality (prefer 1080p, then 720p, then others)
+                        quality_priority = ['1080P', '720P', '480P', '4K', '2160P']
+                        quality = None
+                        for q in quality_priority:
+                            if q in episode:
+                                quality = q
+                                break
+                        if not quality:
+                            quality = list(episode.keys())[0]
+                        
+                        try:
+                            await context.bot.copy_message(
+                                chat_id=query.from_user.id,
+                                from_chat_id=PRIVATE_CHANNEL_ID,
+                                message_id=episode[quality]['message_id']
+                            )
+                            sent_count += 1
+                            await asyncio.sleep(0.5)
+                        except Exception as e:
+                            print(f"❌ Error sending series {item['title']}: {e}")
+                            failed_count += 1
+        
+        except Exception as e:
+            print(f"❌ Error processing {item['title']}: {e}")
+            failed_count += 1
+    
+    # Show completion message with navigation back
+    status_text = f"✅ Successfully sent {sent_count} files!"
+    if failed_count > 0:
+        status_text += f"\n⚠️ {failed_count} files failed to send."
+    
+    keyboard = [[InlineKeyboardButton("⬅️ Back to Results", callback_data=f"page:{page}:{search_query}")]]
+    
+    await query.edit_message_text(
+        status_text + "\n\nYou can go back to search results:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    # Remove buttons after 60 seconds
+    await asyncio.sleep(60)
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except:
+        pass
 
 # ==============================
 # Inline Display Functions
@@ -436,7 +599,7 @@ async def send_all_episodes(query, context, series_key, season_num, quality):
     
     for ep_num, message_id in episodes_to_send:
         try:
-            await context.bot.forward_message(
+            await context.bot.copy_message(
                 chat_id=query.from_user.id,
                 from_chat_id=PRIVATE_CHANNEL_ID,
                 message_id=message_id
