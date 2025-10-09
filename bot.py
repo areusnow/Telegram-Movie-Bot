@@ -4,7 +4,10 @@ import asyncio
 from threading import Thread
 from flask import Flask, send_file
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters
+)
 from difflib import SequenceMatcher
 from pymongo import MongoClient
 
@@ -36,11 +39,10 @@ PRIVATE_CHANNEL_ID = int(os.environ.get("PRIVATE_CHANNEL_ID", "-1001234567890"))
 ADMIN_IDS = [int(x) for x in os.environ.get("ADMIN_IDS", "123456789").split(",")]
 MONGO_URI = os.environ.get("MONGO_URI")
 DB_NAME = "MovieBot"
-
-ITEMS_PER_PAGE = 8  # Number of items per search page
+ITEMS_PER_PAGE = 8  # Number of items per page
 
 # ==========================
-# Database Class (MongoDB)
+# MongoDB Class
 # ==========================
 class MediaDatabase:
     def __init__(self):
@@ -49,7 +51,6 @@ class MediaDatabase:
         self.movies = self.db["movies"]
         self.series = self.db["series"]
 
-    # Parse filename to extract metadata
     def parse_filename(self, filename):
         name = os.path.splitext(filename)[0]
         quality_match = re.search(r'(2160p|4K|1080p|720p|480p|360p)', name, re.IGNORECASE)
@@ -61,24 +62,14 @@ class MediaDatabase:
         title = re.sub(r'[._-]', ' ', title).strip()
 
         if season_episode:
-            return {
-                "type": "series",
-                "title": title,
-                "season": int(season_episode.group(1)),
-                "episode": int(season_episode.group(2)),
-                "quality": quality,
-                "filename": filename
-            }
+            return {"type": "series", "title": title,
+                    "season": int(season_episode.group(1)),
+                    "episode": int(season_episode.group(2)),
+                    "quality": quality, "filename": filename}
         else:
-            return {
-                "type": "movie",
-                "title": title,
-                "year": year,
-                "quality": quality,
-                "filename": filename
-            }
+            return {"type": "movie", "title": title, "year": year,
+                    "quality": quality, "filename": filename}
 
-    # Add media to database
     def add_media(self, message_id, filename, file_id):
         parsed = self.parse_filename(filename)
         key = parsed['title'].lower()
@@ -97,7 +88,6 @@ class MediaDatabase:
             doc["qualities"][q] = {"message_id": message_id, "file_id": file_id, "filename": filename}
             self.movies.update_one({"key": key}, {"$set": doc}, upsert=True)
 
-    # Fuzzy search
     def fuzzy_search(self, query, threshold=0.6):
         query_lower = query.lower()
         results = {"movies": [], "series": []}
@@ -113,7 +103,6 @@ class MediaDatabase:
         results["series"].sort(key=lambda x: x["ratio"], reverse=True)
         return results
 
-    # Get all qualities for a season
     def get_season_qualities(self, series_key, season_num):
         s = self.series.find_one({"key": series_key})
         if not s: return []
@@ -130,20 +119,18 @@ db = MediaDatabase()
 # Bot Handlers
 # ==========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "🎬 Welcome to Movie Bot!\n\nSearch for any movie or web series by typing its name.\nExample: `breaking bad` or `interstellar`\n\n/stats - Show database info"
+    text = "🎬 Welcome to Movie Bot!\n\nSearch for movies/series by typing name.\n/stats - Show database info"
     if update.message.from_user.id in ADMIN_IDS:
-        text += "\n\n🔧 /index - Admin index mode"
+        text += "\n/index - Admin index mode"
     await update.message.reply_text(text)
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    movies_count = db.movies.count_documents({})
-    series_count = db.series.count_documents({})
-    await update.message.reply_text(f"📊 Movies: {movies_count}\n📺 Series: {series_count}")
+    await update.message.reply_text(f"📊 Movies: {db.movies.count_documents({})}\n📺 Series: {db.series.count_documents({})}")
 
 async def index_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id not in ADMIN_IDS:
         return await update.message.reply_text("❌ Admins only!")
-    await update.message.reply_text("📝 Forward files here from your private channel to index them automatically.")
+    await update.message.reply_text("📝 Forward files here from your private channel to index them.")
 
 async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.from_user.id not in ADMIN_IDS:
@@ -152,7 +139,6 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not file_obj:
         return
     filename = file_obj.file_name or f"video_{update.message.message_id}.mp4"
-    # Always send to PRIVATE_CHANNEL_ID for copy-based indexing
     try:
         forwarded = await context.bot.copy_message(
             chat_id=PRIVATE_CHANNEL_ID,
@@ -174,68 +160,94 @@ async def search_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await show_search_results_page(update.message, query, results, 0)
 
 # ==========================
-# Pagination & Buttons
+# Inline Button Functions
 # ==========================
 async def show_search_results_page(message, query, results, page):
-    all_items = []
-    for m in results['movies']: all_items.append(('movie', m))
-    for s in results['series']: all_items.append(('series', s))
+    all_items = [('movie', m) for m in results['movies']] + [('series', s) for s in results['series']]
     total_items = len(all_items)
     total_pages = (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE
-    start_idx = page * ITEMS_PER_PAGE
-    end_idx = min(start_idx + ITEMS_PER_PAGE, total_items)
+    start_idx, end_idx = page * ITEMS_PER_PAGE, min((page + 1) * ITEMS_PER_PAGE, total_items)
     page_items = all_items[start_idx:end_idx]
 
     keyboard = []
-    if page_items:
-        keyboard.append([InlineKeyboardButton("📦 Send All on This Page", callback_data=f"sendpage:{page}:{query}")])
+    if page_items: keyboard.append([InlineKeyboardButton("📦 Send All on This Page", callback_data=f"sendpage:{page}:{query}")])
 
-    has_movies, has_series = False, False
+    has_movies = has_series = False
     for item_type, item in page_items:
-        if item_type == 'movie' and not has_movies:
+        if item_type == "movie" and not has_movies:
             keyboard.append([InlineKeyboardButton("🎬 MOVIES", callback_data="none")])
             has_movies = True
-        elif item_type == 'series' and not has_series:
+        elif item_type == "series" and not has_series:
             keyboard.append([InlineKeyboardButton("📺 SERIES", callback_data="none")])
             has_series = True
         display_name = item['data'].get('filename', item['title'])
-        callback_type = f"{item_type}:{item['key']}"
-        keyboard.append([InlineKeyboardButton(display_name, callback_data=callback_type)])
+        keyboard.append([InlineKeyboardButton(display_name, callback_data=f"{item_type}:{item['key']}")])
 
-    # Pagination buttons
     nav_buttons = []
     if page > 0: nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"page:{page-1}:{query}"))
     if page < total_pages - 1: nav_buttons.append(InlineKeyboardButton("➡️ Next", callback_data=f"page:{page+1}:{query}"))
     if nav_buttons: keyboard.append(nav_buttons)
 
-    page_info = f"Page {page+1}/{total_pages}"
-    text = f"🔍 Results for '{query}'\n{page_info} ({total_items} total results)"
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await message.reply_text(text, reply_markup=reply_markup)
+    text = f"🔍 Results for '{query}'\nPage {page+1}/{total_pages} ({total_items} results)"
+    await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+# ==========================
+# Button Callback Handler
+# ==========================
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    if data == "none": return
+
+    if data.startswith("page:"):
+        _, page_str, search_query = data.split(":", 2)
+        page = int(page_str)
+        results = db.fuzzy_search(search_query)
+        await show_search_results_page(query.message, search_query, results, page)
+
+    elif data.startswith("movie:"):
+        movie_key = data.split(":", 1)[1]
+        await show_movie_qualities(query, movie_key)
+
+    elif data.startswith("series:"):
+        series_key = data.split(":", 1)[1]
+        await show_series_seasons(query, series_key)
+
+# Example helper functions for movie/series buttons
+async def show_movie_qualities(query, movie_key):
+    movie = db.movies.find_one({"key": movie_key})
+    if not movie: return await query.edit_message_text("❌ Movie not found.")
+    keyboard = [[InlineKeyboardButton(f"📥 {q}", callback_data=f"get:{d['message_id']}")] for q, d in movie["qualities"].items()]
+    await query.edit_message_text(f"🎬 {movie['title']}\nSelect Quality:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def show_series_seasons(query, series_key):
+    s = db.series.find_one({"key": series_key})
+    if not s: return await query.edit_message_text("❌ Series not found.")
+    keyboard = [[InlineKeyboardButton(f"Season {sn} ({len(season)} eps)", callback_data=f"season:{series_key}:{sn}")] for sn, season in s['seasons'].items()]
+    await query.edit_message_text(f"📺 {s['title']}\nSelect Season:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 # ==========================
 # Main Entrypoint
 # ==========================
 def main():
     port = int(os.environ.get("PORT", 10000))
-    flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False))
-    flask_thread.daemon = True
-    flask_thread.start()
-    print(f"🌐 Flask running on port {port}")
+    Thread(target=lambda: app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False), daemon=True).start()
 
     if not BOT_TOKEN:
-        print("❌ Error: Missing BOT_TOKEN")
+        print("❌ Missing BOT_TOKEN")
         return
 
-    print("🚀 Starting bot...")
-    app_bot = Application.builder().token(BOT_TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(CommandHandler("stats", stats))
-    app_bot.add_handler(CommandHandler("index", index_channel))
-    app_bot.add_handler(MessageHandler((filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND, handle_media_message))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_media))
-    # CallbackQueryHandler and other buttons should be added here (omitted for brevity; you can integrate from your existing code)
-    app_bot.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("stats", stats))
+    application.add_handler(CommandHandler("index", index_channel))
+    application.add_handler(MessageHandler((filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND, handle_media_message))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_media))
+    application.add_handler(CallbackQueryHandler(button_callback))
+
+    print("🚀 Bot is live...")
+    application.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
