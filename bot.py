@@ -92,8 +92,10 @@ db = MediaDatabase()
 # ==========================
 async def migrate_database_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """One-time migration from old structure to new"""
+    print(f"Migration command received from user {update.message.from_user.id}")
+    
     if update.message.from_user.id not in ADMIN_IDS:
-        return await update.message.reply_text("❌ Admins only!")
+        return await update.message.reply_text(f"❌ Admins only!\nYour ID: {update.message.from_user.id}\nAdmin IDs: {ADMIN_IDS}")
     
     await update.message.reply_text("🔄 Starting migration...")
     
@@ -302,6 +304,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("index", index_channel))
+    application.add_handler(CommandHandler("migrate", migrate_database_command))  # REMOVE AFTER RUNNING ONCE
     application.add_handler(MessageHandler(
         (filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND,
         handle_media_message
