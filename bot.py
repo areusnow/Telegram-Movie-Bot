@@ -88,45 +88,6 @@ class MediaDatabase:
 db = MediaDatabase()
 
 # ==========================
-# Migration Function
-# ==========================
-async def migrate_database_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """One-time migration from old structure to new"""
-    print(f"Migration command received from user {update.message.from_user.id}")
-    
-    if update.message.from_user.id not in ADMIN_IDS:
-        return await update.message.reply_text(f"❌ Admins only!\nYour ID: {update.message.from_user.id}\nAdmin IDs: {ADMIN_IDS}")
-    
-    await update.message.reply_text("🔄 Starting migration...")
-    
-    try:
-        migrated = 0
-        
-        # Migrate movies
-        old_movies = db.db["movies"].find()
-        for movie in old_movies:
-            for quality, data in movie.get('qualities', {}).items():
-                db.add_media(data['message_id'], data['filename'], data['file_id'])
-                migrated += 1
-        
-        # Migrate series
-        old_series = db.db["series"].find()
-        for series in old_series:
-            for season_num, season in series.get('seasons', {}).items():
-                for ep_num, episodes in season.items():
-                    for quality, data in episodes.items():
-                        db.add_media(data['message_id'], data['filename'], data['file_id'])
-                        migrated += 1
-        
-        await update.message.reply_text(
-            f"✅ Migration complete!\n"
-            f"Migrated {migrated} files\n\n"
-            f"⚠️ Now remove the /migrate command from code and redeploy"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"❌ Migration error: {e}")
-
-# ==========================
 # Bot Handlers
 # ==========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
