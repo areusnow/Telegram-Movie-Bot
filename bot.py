@@ -265,7 +265,6 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("index", index_channel))
-    application.add_handler(CommandHandler("migrate", migrate_database_command))  # REMOVE AFTER RUNNING ONCE
     application.add_handler(MessageHandler(
         (filters.Document.ALL | filters.VIDEO) & ~filters.COMMAND,
         handle_media_message
